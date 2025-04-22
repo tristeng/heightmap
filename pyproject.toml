@@ -1,0 +1,18 @@
+[project]
+name = "heightmap"
+version = "0.1.0"
+description = "A Python tool for converting 2D polyline data into heightmap EXR files."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Tristen Georgiou", email = "tristen.georgiou@gmail.com"},
+]
+dependencies = [
+    "numpy>=2.2.5",
+    "openexr>=3.3.3",
+    "pillow>=11.2.1",
+    "requests>=2.32.3",
+    "scipy>=1.15.2",
+]
