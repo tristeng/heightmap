@@ -116,7 +116,7 @@ def create_heightmap(polyline: np.ndarray, width: int = 1024, height: int = 1024
 
 def save_exr(heightmap: np.ndarray, output_path: str) -> None:
     """
-    Save heightmap as EXR file using OpenEXR
+    Save heightmap as EXR file using OpenEXR (grayscale, single channel)
     
     Args:
         heightmap: 2D numpy array with heightmap data
@@ -128,51 +128,45 @@ def save_exr(heightmap: np.ndarray, output_path: str) -> None:
     # Convert to float32 and make sure data is in proper format
     heightmap_float32 = heightmap.astype(np.float32)
     
-    # Create header
+    # Create header with just R channel - single channel EXR and Godot wants it on the R channel
     header = OpenEXR.Header(width, height)
     half_chan = Imath.Channel(Imath.PixelType(Imath.PixelType.FLOAT))
-    header['channels'] = dict([(c, half_chan) for c in "YRG"])
+    header["channels"] = dict([("R", half_chan)])
     
     # Create OpenEXR output file
     exr = OpenEXR.OutputFile(output_path, header)
     
-    # Convert data to strings
-    Y = array.array('f', heightmap_float32.flatten()).tobytes()
+    # Convert data to bytes
+    R = array.array("f", heightmap_float32.flatten()).tobytes()
     
-    # Write to file (using the same data for all channels)
-    exr.writePixels({'Y': Y, 'R': Y, 'G': Y})
+    # Write to file (single channel only)
+    exr.writePixels({"R": R})
     
     # Close the file
     exr.close()
 
-def calculate_optimal_dimensions(polyline: np.ndarray, target_pixels: int = 1024*1024) -> tuple[int, int]:
+def calculate_optimal_dimensions(polyline: np.ndarray, 
+                                 pixels_per_meter: float = 1.0, 
+                                 height: int = 1024) -> tuple[int, int]:
     """
-    Calculate optimal width and height based on terrain aspect ratio.
+    Calculate optimal width based on terrain extent, with fixed or specified height.
     
     Args:
         polyline: Nx2 array of (x,y) coordinates
-        target_pixels: Target total number of pixels
+        height: Height to use for the heightmap
+        pixels_per_meter: Optional resolution in pixels per meter
         
     Returns:
         tuple[int, int]: Width and height in pixels
     """
     # Find bounds of polyline
-    x_min, y_min = np.min(polyline, axis=0)
-    x_max, y_max = np.max(polyline, axis=0)
+    x_min, x_max = np.min(polyline[:, 0]), np.max(polyline[:, 0])
     
-    # Calculate aspect ratio (width:height)
+    # Calculate terrain width in meters
     terrain_width = x_max - x_min
-    terrain_height = y_max - y_min
-    aspect_ratio = terrain_width / terrain_height
     
-    # Calculate dimensions that preserve aspect ratio
-    # and have approximately target_pixels total
-    width = int(np.sqrt(target_pixels * aspect_ratio))
-    height = int(np.sqrt(target_pixels / aspect_ratio))
-    
-    # Make dimensions powers of 2 (optional)
-    width = 2 ** int(np.ceil(np.log2(width)))
-    height = 2 ** int(np.ceil(np.log2(height)))
+    # Calculate width based on pixels per meter or use target width
+    width = int(terrain_width * pixels_per_meter)
     
     return width, height
 
@@ -194,19 +188,15 @@ def main() -> None:
                       default="heightmap.exr",
                       help="Output EXR file path")
     
-    parser.add_argument("-w", "--width", 
-                      type=int, 
-                      default=1024, 
-                      help="Width of output heightmap (default: 1024)")
+    parser.add_argument("-p", "--ppm", 
+                      type=float, 
+                      default=1.0, 
+                      help="Pixels per meter (default: 1.0)")
     
     parser.add_argument("-t", "--height", 
                       type=int, 
                       default=1024, 
                       help="Height of output heightmap (default: 1024)")
-    
-    parser.add_argument("-a", "--auto-dimensions", 
-                      action="store_true",
-                      help="Automatically calculate dimensions based on terrain aspect ratio")
 
     args = parser.parse_args()
     
@@ -229,12 +219,18 @@ def main() -> None:
         return
     
     print(f"Found {len(polyline)} points in polyline")
+
+    # Print out the delta x and y values
+    delta_x = np.max(polyline[:, 0]) - np.min(polyline[:, 0])
+    delta_y = np.max(polyline[:, 1]) - np.min(polyline[:, 1])
+    print(f"Delta X: {delta_x}, Delta Y: {delta_y}")
     
     # In main function where dimensions are processed
-    if args.auto_dimensions:
-        print("Calculating optimal dimensions based on terrain aspect ratio...")
-        args.width, args.height = calculate_optimal_dimensions(polyline, target_pixels=args.width * args.height)
-        print(f"Using calculated dimensions: {args.width}x{args.height}")
+    print("Calculating optimal dimensions based on terrain aspect ratio...")
+    args.width, args.height = calculate_optimal_dimensions(polyline, 
+                                                            pixels_per_meter=args.ppm, 
+                                                            height=args.height)
+    print(f"Using calculated dimensions: {args.width}x{args.height}")
     
     print(f"Creating heightmap ({args.width}x{args.height})...")
     heightmap: np.ndarray = create_heightmap(polyline, width=args.width, height=args.height)

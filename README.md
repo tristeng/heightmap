@@ -2,6 +2,8 @@
 
 A Python tool for converting 2D polyline data into heightmap EXR files. The tool can read polyline data from local JSON files or fetch it from a remote API, then interpolate the data to create elevation maps.
 
+This repo was written 95% by AI while I was watching TV using Claude 3.7 Sonnet Thinking Copilot model. I created this so I could convert some 2D levels I had created for a mobile game called [StuntSki](https://deaddropgames.com/stuntski/) into heightmaps I could import into Godot. The levels are available through an API on the above website.
+
 ## Installation
 
 This project requires Python 3.13+ and depends on libraries like numpy, scipy, imageio, and requests.
@@ -12,7 +14,7 @@ git clone <repository-url>
 cd heightmap
 
 # Install dependencies with UV: https://docs.astral.sh/uv/
-uv venv
+uv venv --python 3.13.3
 uv sync
 ```
 
@@ -25,13 +27,10 @@ The heightmap generator accepts input from either a local JSON file or a remote 
 python heightmap_generator.py -i input.json -o output.exr
 
 # Generate heightmap from remote API using an ID
-python heightmap_generator.py -id 12345 -o output.exr
+python heightmap_generator.py -id 2 -o output.exr
 
-# Automatically calculate optimal dimensions based on terrain shape
-python heightmap_generator.py -i input.json -a -o output.exr
-
-# Specify custom dimensions
-python heightmap_generator.py -i input.json -w 2048 -t 1024 -o output.exr
+# Specify custom dimensions (p is pixels per metre)
+python heightmap_generator.py -i input.json -p 2 -t 128 -o output.exr
 ```
 
 ## Command Line Options
@@ -41,9 +40,8 @@ python heightmap_generator.py -i input.json -w 2048 -t 1024 -o output.exr
 | `-i`, `--input` | Input JSON file containing polyline data |
 | `-id`, `--identifier` | ID to use with the API URL template |
 | `-o`, `--output` | Output EXR file path (default: heightmap.exr) |
-| `-w`, `--width` | Width of output heightmap (default: 1024) |
+| `-p`, `--ppm` | Pixels per metre (default: 1.0) |
 | `-t`, `--height` | Height of output heightmap (default: 1024) |
-| `-a`, `--auto-dimensions` | Automatically calculate dimensions based on terrain aspect ratio |
 
 ## Input Format
 
@@ -76,19 +74,22 @@ The JSON input is expected to have the following structure:
 The tool can fetch polyline data from a remote API using the URL template:
 `https://deaddropgames.com/stuntski/api/levels/{id}`
 
-## Tips and Notes
-### Match the Aspect Ratio
-The heightmap's dimensions should match the aspect ratio of your terrain to avoid distortion:
+## Importing into Godot
+You can use the heightmap by creating a `StaticBody3D` with a `CollisionShape3D` as a child. Specify a `HeightMapShape3D` as the Shape for the collision shape, and then you can use some GDScript code like so:
 ```python
-# Example: terrain is 2000m long and 100m wide (20:1 ratio)
-python heightmap_generator.py -i terrain.json -w 2048 -t 128
-```
-### Resolution Distribution
-Allocate pixels efficiently:
-* More resolution along the length (skiing direction)
-* Less resolution across the width
+extends CollisionShape3D
 
-### Memory Considerations
-If your terrain is extremely long (like 10:1 ratio or more):
-* Consider limiting total pixel count (e.g., 4-8 million pixels maximum)
-* Example: 4096x512 instead of 8192x1024
+
+# Called when the node enters the scene tree for the first time.
+func _ready() -> void:
+    var heightmap_texture: = ResourceLoader.load("res://output.exr")
+    var heightmap_image = heightmap_texture.get_image()
+
+    # The minimum height should be the lowest point of your height map in metres
+    var height_min = -100.0  # My height maps start at 0,0 and descend since they are ski run
+    var height_max = 0.0
+
+    # The height map will be centred by default - you may want to adjust its position and rotation here
+
+    self.shape.update_map_data_from_image(heightmap_image, height_min, height_max)
+```
